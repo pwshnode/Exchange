@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Configuration version="1.0">
+<Feature Name="WelcomeEmail" Cmdlets="New-Mailbox,Enable-Mailbox">
+<ApiCall Name="OnComplete">
+if($succeeded) {
+     $body = "HTML PATH"
+     $emailfrom = " "
+     $MessageSubject = " "
+     $SMTPServer = " "
+    $TargetOU = " "
+    # Hashtable for replacing images in HTML and then adding them to attachments
+	 $images =@{
+				"{IMG_logo}" = "IMAGE PATH"
+			}
+
+	 #Waiting for synchronization after mailbox has been created.
+		Set-ADServerSettings -ViewEntireForest $true
+		Start-Sleep -s 60
+		
+#New-Mailbox triggered. Taking SamAccountName parameter.
+ if ($provisioningHandler.UserSpecifiedParameters.Contains("SamAccountName") -eq $true) {
+ $UsrSamAccountName = $provisioningHandler.UserSpecifiedParameters["SamAccountName"]
+ $UsrAlias = (Get-Mailbox -Filter {SamAccountName -eq $UsrSamAccountName}).Alias.ToString()
+ }
+ #Enable-Mailbox triggered. Taking Identity parameter, this is the only one avalaible in this case.
+ if ($provisioningHandler.UserSpecifiedParameters.Contains("Identity") -eq $true) {
+ $UsrIdentity = $provisioningHandler.UserSpecifiedParameters["Identity"].ToString()
+ $UsrAlias = (Get-Mailbox -Identity $UsrIdentity).Alias.ToString()
+ }
+ #Defining variables.
+ $UsrAddr = (Get-Mailbox -Filter {Alias -eq $UsrAlias}).PrimarySmtpAddress.ToString()
+ $UsrOU = (Get-Mailbox -Filter {Alias -eq $UsrAlias}).OrganizationalUnit
+
+    # Replacing strings in the array and adding hidden attachments to the body of the message
+	
+$emailbody = [string] (Get-Content ($body) -encoding UTF8)
+ 
+$images.keys | foreach -begin {
+	$id = 1
+	$emailmsg = New-Object System.Net.Mail.MailMessage
+	$emailmsg.IsBodyHtml = $true
+	$emailmsg.From = $emailfrom
+	$emailmsg.Sender = $emailfrom
+	$emailmsg.to.add($UsrAddr)
+	$emailmsg.subject = $MessageSubject
+} -process {
+	$pic = New-Object Net.Mail.Attachment($images[$_])
+	$pic.contentType.Mediatype = "image/png"
+	$pic.Contentid = "Attachment$id"
+	$emailbody = $emailbody -Replace [regex]::Escape($_), $pic.ContentId
+	$emailmsg.Attachments.add($pic)
+ 
+    $id++
+} -End {
+    $emailmsg.body = $emailbody
+	
+}
+
+if ($UsrOU -match $TargetOU) {
+		$smtp = New-Object Net.Mail.SmtpClient($SMTPServer)
+		$smtp.Send($emailmsg)
+}
+
+ # Clearing variables. Each one in its own line in order to prevent error messages from being shown on EMC.
+ if ($UsrAlias) { Remove-Variable UsrAlias }
+ if ($UsrAddr) { Remove-Variable UsrAddr }
+ if ($UsrOU) { Remove-Variable UsrOU }
+ if ($UsrMsg) { Remove-Variable UsrMsg }
+ if ($UsrIdentity) { Remove-Variable UsrIdentity }
+ if ($UsrSamAccountName) { Remove-Variable UsrSamAccountName }
+ if ($emailbody) {Remove-Variable emailbody}
+ if ($emailmsg)	{Remove-Variable emailmsg}
+ if ($emailfrom) {Remove-Variable emailfrom}
+ if ($MessageSubject) {Remove-Variable MessageSubject}
+ if ($images) {Remove-Variable images}
+ if ($pic)	{Remove-Variable pic}
+}
+</ApiCall>
+</Feature>
+</Configuration>
